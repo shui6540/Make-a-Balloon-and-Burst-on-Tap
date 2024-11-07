@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Balloon Burst Game</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
+
+<script>
+    const config = {
+        type: Phaser.AUTO,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        scene: { preload: preload, create: create, update: update },
+        physics: { default: 'arcade', arcade: { debug: false } },
+        scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH }
+    };
+
+    const game = new Phaser.Game(config);
+
+    let c1Button, c2Button, c3Button;
+    let popSound, particles, emitter;
+    let balloons = [];
+    let currentBalloon = null;
+    let pumpCounter = 0;
+    let currentLetterIndex = 0;
+    let balloonImages = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png', '7.png', '8.png', '9.png', '10.png'];
+
+    function preload() {
+    balloonImages.forEach(image => this.load.image(image, `assets/${image}`));
+    this.load.image('c1', 'assets/c1.png');
+    this.load.image('c2', 'assets/c2.png');
+    this.load.image('c3', 'assets/c3.png');
+    this.load.image('background', 'assets/background.png');
+    this.load.audio('pop', 'assets/pop.mp3');
+    this.load.image('burstParticle', 'assets/particle.png');
+    this.load.image('tail', 'assets/tail.png');
+}
+
+
+    function create() {
+        this.background = this.add.image(config.width / 2, config.height / 2, 'background');
+        this.background.setOrigin(0.5, 0.5);
+        this.background.displayWidth = config.width;
+        this.background.displayHeight = config.height;
+
+        const buttonYOffset = 250;
+        const buttonXOffset = 300;
+
+        c3Button = this.add.sprite(config.width - buttonXOffset / 1.8, config.height - buttonYOffset * 0.05, 'c3').setInteractive();
+        c2Button = this.add.sprite(config.width - buttonXOffset / 1, config.height - buttonYOffset * 0.5, 'c2').setInteractive();
+        c1Button = this.add.sprite(config.width - buttonXOffset / 1.8, config.height - buttonYOffset, 'c1').setInteractive();
+
+        c1Button.setScale(0.4);
+        c2Button.setScale(0.5, 0.3);
+        c3Button.setScale(0.5);
+
+        c1Button.setDepth(8);
+        c2Button.setDepth(10);
+        c3Button.setDepth(15);
+
+        popSound = this.sound.add('pop');
+
+        particles = this.add.particles('burstParticle');
+        emitter = particles.createEmitter({
+            speed: { min: -300, max: 300 },
+            angle: { min: 0, max: 360 },
+            scale: { start: 0.1, end: 0 },
+            lifespan: 1000,
+            gravityY: 100
+        });
+        emitter.stop();
+
+        this.time.addEvent({
+            delay: 0,
+            callback: () => { if (!currentBalloon) { startNewBalloon.call(this); } },
+            loop: true
+        });
+
+        this.tweens.add({
+            targets: c1Button,
+            y: c1Button.y + 65,
+            duration: 500,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1
+        });
+
+        this.tweens.add({
+            targets: c3Button,
+            scaleX: 0.5,
+            scaleY: 0.48,
+            duration: 490,
+            yoyo: true,
+            repeat: -1,
+            onStart: () => { c3Button.setOrigin(0.5, 1.4); },
+            onUpdate: () => { c3Button.y = c2Button.y + c2Button.height / 2.1; }
+        });
+
+        this.tweens.add({
+            targets: c2Button,
+            y: c2Button.y + 10,
+            duration: 500,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1
+        });
+    }
+
+    let usedBalloonImages = [];
+    let lastBurstBalloonImage = null;
+
+    function startNewBalloon() {
+        const nozzleX = c2Button.x - 60;
+        let nozzleY = c2Button.y - c2Button.height / 9.2;
+
+        if (usedBalloonImages.length === balloonImages.length) {
+            usedBalloonImages = [];
+        }
+
+        let randomBalloonImage;
+        do {
+            randomBalloonImage = balloonImages[Phaser.Math.Between(0, balloonImages.length - 1)];
+        } while (usedBalloonImages.includes(randomBalloonImage) || randomBalloonImage == lastBurstBalloonImage);
+
+        usedBalloonImages.push(randomBalloonImage);
+
+        currentBalloon = this.physics.add.sprite(nozzleX, nozzleY, randomBalloonImage);
+        currentBalloon.setScale(0.1);
+        currentBalloon.setDepth(2);
+
+        const tail = this.add.image(nozzleX, nozzleY + currentBalloon.height / 2, 'tail');
+        tail.setScale(0.4);
+        tail.setDepth(0.9);
+        tail.setVisible(false);
+
+        this.physics.world.enable(tail);
+        tail.body.setAllowGravity(false);
+
+        currentBalloon.tail = tail;
+
+        pumpCounter = 0;
+
+        const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const randomLetter = alphabet[currentLetterIndex];
+        currentLetterIndex = (currentLetterIndex + 1) % 26;
+
+        let balloonText = this.add.text(0, 0, randomLetter, { font: '300px Cambria', fontStyle: 'bold', stroke: '#000', strokeThickness: 10, fill: '#fff' });
+        balloonText.setOrigin(0.5, 0.5);
+        balloonText.setDepth(1);
+        balloonText.setScale(0);
+        currentBalloon.text = balloonText;
+
+        balloons.push(currentBalloon);
+        currentBalloon.setDepth(1);
+
+        this.time.addEvent({
+            delay: 1200,
+            callback: pumpBalloon,
+            callbackScope: this,
+            repeat: 2
+        });
+    }
+
+    function pumpBalloon() {
+        if (!currentBalloon) return;
+
+        pumpCounter++;
+        const newScale = currentBalloon.scale + 0.1;
+        currentBalloon.setScale(newScale);
+
+        if (pumpCounter === 1) {
+            currentBalloon.text.setScale(0.1);
+        }
+        currentBalloon.text.setScale(newScale);
+
+        let nozzleY = c2Button.y - c2Button.height / 8;
+        if (newScale >= 0.2 && newScale < 0.5) {
+            nozzleY = c2Button.y - c2Button.height / 6;
+        } else if (newScale >= 0.5) {
+            nozzleY = c2Button.y - c2Button.height / 2;
+        }
+
+        currentBalloon.setPosition(currentBalloon.x, nozzleY);
+
+        if (pumpCounter === 3) {
+            currentBalloon.tail.setVisible(true);
+            releaseBalloon();
+        }
+    }
+
+    function releaseBalloon() {
+        const randomSpeedX = Phaser.Math.Between(-200, -50);
+        const randomSpeedY = Phaser.Math.Between(-200, -50);
+
+        currentBalloon.setVelocityX(randomSpeedX);
+        currentBalloon.setVelocityY(randomSpeedY);
+
+        currentBalloon.setBounce(1, 1);
+        currentBalloon.setCollideWorldBounds(true);
+
+        currentBalloon.tail.setPosition(
+            currentBalloon.x,
+            currentBalloon.y + currentBalloon.displayHeight / 1.8
+        );
+
+        currentBalloon.setInteractive();
+        currentBalloon.on('pointerdown', burstBalloon.bind(this, currentBalloon), this);
+
+        currentBalloon = null;
+    }
+
+    function burstBalloon(balloon) {
+        popSound.play();
+
+        emitter.setPosition(balloon.x, balloon.y);
+        emitter.explode(200);
+
+        balloon.text.destroy();
+        balloon.tail.destroy();
+        balloon.destroy();
+
+        const index = balloons.indexOf(balloon);
+        if (index > -1) {
+            balloons.splice(index, 1);
+        }
+    }
+
+    function update() {
+        const upperHalfBoundary = config.height / 2;
+
+        balloons.forEach(balloon => {
+            if (balloon) {
+                balloon.angle = 0;
+                balloon.text.setPosition(balloon.x, balloon.y);
+                
+                balloon.tail.setPosition(
+                    balloon.x,
+                    balloon.y + balloon.displayHeight / 1.8
+                );
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
